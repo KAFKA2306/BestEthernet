@@ -71,6 +71,63 @@ graph LR
 5. PCのモバイルホットスポット機能を自動的に有効化（`hotspot_activator.py`）
 6. 接続状態を継続的にモニタリングし、必要に応じて再最適化
 
+## 5. BestEthernetユーザーガイド
+
+### 5.1 主要機能と使用方法
+
+#### 最速のネットワーク接続を自動で選択
+**使用ツール**: `speed_test_and_select.py`
+```
+python speed_test_and_select.py
+```
+
+#### ネットワーク接続を手動で切り替え
+**使用ツール**: `ethernet_switcher_gui.py`
+```
+python ethernet_switcher_gui.py
+```
+
+#### モバイルホットスポットを開始
+**使用ツール**: `hotspot_activator.py`
+```
+python hotspot_activator.py
+```
+
+#### モバイルホットスポット用のインターフェースを選択
+**使用ツール**: `hotspot_interface_selector.py`
+```
+python hotspot_interface_selector.py
+```
+
+#### 全てのネットワークインターフェースを有効化
+**使用ツール**: `enable_all_interfaces.py`
+```
+python enable_all_interfaces.py
+```
+
+### 5.2 システム構成図
+
+```mermaid
+graph TD
+    A[speed_test_and_select.py] -->|速度測定・選択| B[イーサネットインターフェース]
+    C[ethernet_switcher_gui.py] -->|手動切り替え| B
+    D[hotspot_activator.py] -->|有効化| E[モバイルホットスポット]
+    F[enable_all_interfaces.py] -->|全有効化| B
+    G[hotspot_interface_selector.py] -->|インターフェース選択| E
+    B -->|使用| E
+    H[ユーザー] -->|操作| C
+    H -->|操作| G
+    H -->|使用| A
+    H -->|使用| D
+    H -->|使用| F
+```
+
+### 5.3 注意事項とトラブルシューティング
+
+- すべてのツールはWindows環境専用です。
+- 一部の機能には管理者権限が必要です。
+
+
 ## 4. 実績データ事例
 
 ### 4.1 データ概要
@@ -149,61 +206,7 @@ graph LR
 3. **最適ネットワークの日変動**：日によって最適なネットワークが異なる。
 4. **長期的傾向**：3月初旬は大きな変動と高速接続の機会があったが、中旬以降は全体的に安定し、速度は低下（約24/12 Mbps前後）。
 
-## 5. BestEthernetユーザーガイド
 
-### 5.1 主要機能と使用方法
-
-#### 最速のネットワーク接続を自動で選択
-**使用ツール**: `speed_test_and_select.py`
-```
-python speed_test_and_select.py
-```
-
-#### ネットワーク接続を手動で切り替え
-**使用ツール**: `ethernet_switcher_gui.py`
-```
-python ethernet_switcher_gui.py
-```
-
-#### モバイルホットスポットを開始
-**使用ツール**: `hotspot_activator.py`
-```
-python hotspot_activator.py
-```
-
-#### モバイルホットスポット用のインターフェースを選択
-**使用ツール**: `hotspot_interface_selector.py`
-```
-python hotspot_interface_selector.py
-```
-
-#### 全てのネットワークインターフェースを有効化
-**使用ツール**: `enable_all_interfaces.py`
-```
-python enable_all_interfaces.py
-```
-
-### 5.2 システム構成図
-
-```mermaid
-graph TD
-    A[speed_test_and_select.py] -->|速度測定・選択| B[イーサネットインターフェース]
-    C[ethernet_switcher_gui.py] -->|手動切り替え| B
-    D[hotspot_activator.py] -->|有効化| E[モバイルホットスポット]
-    F[enable_all_interfaces.py] -->|全有効化| B
-    G[hotspot_interface_selector.py] -->|インターフェース選択| E
-    B -->|使用| E
-    H[ユーザー] -->|操作| C
-    H -->|操作| G
-    H -->|使用| A
-    H -->|使用| D
-    H -->|使用| F
-```
-
-### 5.3 注意事項とトラブルシューティング
-
-- すべてのツールはWindows環境専用です。
-- 一部の機能には管理者権限が必要です。
 
 ## 6. 結論
 
