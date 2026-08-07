@@ -85,11 +85,9 @@ class NetworkSafetyTests(unittest.TestCase):
         self.a = adapter(1, "Ethernet A")
         self.b = adapter(2, "Ethernet B")
 
-    def assert_original_state(self, backend, *, disabled=None):
+    def assert_original_state(self, backend):
         self.assertTrue(backend.states[1].enabled)
         self.assertTrue(backend.states[2].enabled)
-        if disabled:
-            self.assertFalse(backend.states[disabled].enabled)
 
     def test_two_active_adapters_are_measured_with_requested_binding(self):
         backend = FakeBackend([self.a, self.b])
@@ -140,6 +138,16 @@ class NetworkSafetyTests(unittest.TestCase):
         tester = FakeTester(failure=KeyboardInterrupt())
         with self.assertRaises(KeyboardInterrupt):
             run_measurements(backend, tester, settle_seconds=0)
+        self.assert_original_state(backend)
+
+    def test_log_write_failure_restores_original_state(self):
+        backend = FakeBackend([self.a, self.b])
+
+        def fail_log(_sample):
+            raise OSError("disk full")
+
+        with self.assertRaisesRegex(OSError, "disk full"):
+            run_measurements(backend, FakeTester(), settle_seconds=0, on_sample=fail_log)
         self.assert_original_state(backend)
 
     def test_initially_disabled_adapter_stays_disabled(self):
