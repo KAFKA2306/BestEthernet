@@ -270,6 +270,7 @@ def run_measurements(
     results: list[SpeedSample] = []
     try:
         for candidate in candidates:
+            actual: AdapterState | None = None
             try:
                 if isolate:
                     isolate_adapter(backend, candidate, candidates)
@@ -293,7 +294,7 @@ def run_measurements(
             except BaseException as exc:
                 failure = SpeedSample(
                     requested_interface=candidate.name,
-                    actual_interface=(actual.name if "actual" in locals() and actual else None),
+                    actual_interface=(actual.name if actual else None),
                     source_ip=candidate.source_ip,
                     gateway=candidate.gateway,
                     measurement_server=None,
@@ -375,6 +376,19 @@ def main(argv: list[str] | None = None) -> int:
             f"gateway={adapter.gateway})"
         )
     if args.dry_run:
+        candidate_indexes = {item.index for item in candidates}
+        print("Excluded adapters:")
+        for adapter in original:
+            if adapter.index not in candidate_indexes:
+                print(
+                    f"- {adapter.name} (ifIndex={adapter.index}, admin={adapter.admin_status}, "
+                    f"link={adapter.status}, hardware={adapter.hardware_interface})"
+                )
+        print(
+            "Plan: isolate one eligible adapter at a time, bind speedtest to its source IPv4, "
+            "then restore every adapter to its original administrative state."
+        )
+        print("Routes are observed for audit only; this command does not modify routes.")
         print("Dry-run: no adapter state, route or file was changed.")
         return 0
 
