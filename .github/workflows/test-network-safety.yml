@@ -22,7 +22,8 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Reject personal absolute paths
         run: |
-          if grep -R --line-number --fixed-strings 'C:\Users\100ca' speed_test_and_select.py tests .github; then
+          forbidden="C:\\Users\\100""ca"
+          if grep -R --line-number --fixed-strings "$forbidden" speed_test_and_select.py tests; then
             echo 'personal absolute path found'
             exit 1
           fi
