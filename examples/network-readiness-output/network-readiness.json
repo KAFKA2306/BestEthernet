@@ -1,0 +1,58 @@
+{
+  "candidate_summaries": [
+    {
+      "aggregation": "median for latency/download/upload; minimum for download/upload",
+      "download_median_mbps": 92.0,
+      "download_min_mbps": 88.0,
+      "gateways": ["192.0.2.x"],
+      "interface": "Venue Ethernet",
+      "latency_median_ms": 19.0,
+      "reason_codes": ["CONFIGURED_THRESHOLDS_MET"],
+      "rejection_counts": {},
+      "required_samples": 3,
+      "sample_count": 3,
+      "source_ips": ["192.0.2.x"],
+      "status": "MEETS_CONFIGURED_THRESHOLDS",
+      "successful_sample_count": 3,
+      "threshold_checks": {"download": true, "latency": true, "upload": true},
+      "thresholds_met": true,
+      "upload_median_mbps": 27.0,
+      "upload_min_mbps": 26.0
+    },
+    {
+      "aggregation": "median for latency/download/upload; minimum for download/upload",
+      "download_median_mbps": 70.0,
+      "download_min_mbps": 68.0,
+      "gateways": ["198.51.100.x"],
+      "interface": "Phone Tethering",
+      "latency_median_ms": 34.0,
+      "reason_codes": ["CONFIGURED_THRESHOLDS_MET"],
+      "rejection_counts": {},
+      "required_samples": 3,
+      "sample_count": 3,
+      "source_ips": ["198.51.100.x"],
+      "status": "MEETS_CONFIGURED_THRESHOLDS",
+      "successful_sample_count": 3,
+      "threshold_checks": {"download": true, "latency": true, "upload": true},
+      "thresholds_met": true,
+      "upload_median_mbps": 17.0,
+      "upload_min_mbps": 16.0
+    }
+  ],
+  "disclaimer": "Configured thresholds are an operator-defined screening rule, not a guarantee of VR, VRChat, HMD, venue Wi-Fi, or event quality.",
+  "hotspot_required": true,
+  "job_id": "sample-venue-20260809",
+  "public_report": true,
+  "schema_version": "bestethernet.network-readiness.v1",
+  "selection": {
+    "fallback_interface": "Phone Tethering",
+    "primary_interface": "Venue Ethernet",
+    "reason_codes": ["PRIMARY_SELECTED_FROM_THRESHOLD_ELIGIBLE_CANDIDATES"],
+    "selection_method": "Only candidates with >= required samples and all configured thresholds met are eligible; eligible candidates rank by latency median ascending, then download/upload minimum descending.",
+    "status": "READY_FOR_HUMAN_REVIEW"
+  },
+  "source_log_contract": "measurements.jsonl rows must carry the same job_id as this report",
+  "test_window": "2026-08-09T00:00:00Z/2026-08-09T01:00:00Z",
+  "thresholds": {"max_latency_ms": 40.0, "min_download_mbps": 50.0, "min_upload_mbps": 10.0},
+  "venue_id": "sample-venue"
+}
