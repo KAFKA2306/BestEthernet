@@ -1,0 +1,18 @@
+{
+  "schema_version": "bestethernet.network-readiness.v1",
+  "job_id": "sample-venue-20260809",
+  "venue_id": "sample-venue",
+  "test_window": "2026-08-09T00:00:00Z/2026-08-09T01:00:00Z",
+  "candidate_interfaces": [
+    "Venue Ethernet",
+    "Phone Tethering"
+  ],
+  "required_samples": 3,
+  "thresholds": {
+    "max_latency_ms": 40.0,
+    "min_download_mbps": 50.0,
+    "min_upload_mbps": 10.0
+  },
+  "hotspot_required": true,
+  "report_output": "examples/network-readiness-output"
+}
