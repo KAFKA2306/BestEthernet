@@ -8,7 +8,7 @@ import os
 import re
 import subprocess
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Callable, Iterable, Protocol
 
@@ -64,6 +64,7 @@ class SpeedSample:
     upload_mbps: float | None
     success: bool
     failure_reason: str | None = None
+    job_id: str | None = None
 
 
 class NetworkBackend(Protocol):
@@ -259,6 +260,7 @@ def run_measurements(
     isolate: bool = True,
     settle_seconds: float = 0.0,
     on_sample: Callable[[SpeedSample], None] | None = None,
+    job_id: str | None = None,
 ) -> list[SpeedSample]:
     original = backend.snapshot()
     candidates = eligible_adapters(original, include_virtual=include_virtual)
@@ -288,6 +290,7 @@ def run_measurements(
                         f"tester reported egress mismatch: requested={candidate.name}, "
                         f"actual={sample.actual_interface}"
                     )
+                sample = replace(sample, job_id=job_id)
                 results.append(sample)
                 if on_sample:
                     on_sample(sample)
@@ -306,6 +309,7 @@ def run_measurements(
                     upload_mbps=None,
                     success=False,
                     failure_reason=f"{type(exc).__name__}: {exc}",
+                    job_id=job_id,
                 )
                 if on_sample:
                     on_sample(failure)
@@ -361,6 +365,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--log-dir", type=Path, default=default_log_dir(), help="Directory for JSONL/CSV audit logs"
     )
+    parser.add_argument(
+        "--job-id",
+        help="Optional stable readiness job ID written to every audit sample",
+    )
     return parser
 
 
@@ -399,6 +407,7 @@ def main(argv: list[str] | None = None) -> int:
         isolate=not args.no_isolate,
         settle_seconds=args.settle_seconds,
         on_sample=lambda sample: write_results([sample], args.log_dir),
+        job_id=args.job_id,
     )
     for result in results:
         print(
