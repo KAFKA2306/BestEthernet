@@ -176,6 +176,11 @@ class NetworkSafetyTests(unittest.TestCase):
             run_measurements(backend, tester, settle_seconds=0)
         self.assert_original_state(backend)
 
+    def test_job_id_is_attached_to_successful_samples(self):
+        backend = FakeBackend([self.a, self.b])
+        results = run_measurements(backend, FakeTester(), settle_seconds=0, job_id="venue-001")
+        self.assertEqual([item.job_id for item in results], ["venue-001", "venue-001"])
+
     def test_logs_are_auditable_and_portable(self):
         sample = FakeTester().measure(self.a)
         with tempfile.TemporaryDirectory() as tmp:
