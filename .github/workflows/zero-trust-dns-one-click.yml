@@ -1,0 +1,94 @@
+name: ZeroTrustDNS one-click proof
+
+on:
+  pull_request:
+    paths:
+      - "INSTALL-ZEROTRUST-DNS.cmd"
+      - "zero_trust_dns/one_click/**"
+      - ".github/workflows/zero-trust-dns-one-click.yml"
+  push:
+    branches: [main]
+    paths:
+      - "INSTALL-ZEROTRUST-DNS.cmd"
+      - "zero_trust_dns/one_click/**"
+      - ".github/workflows/zero-trust-dns-one-click.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-proof:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout pinned action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Parse and fail-closed static tests
+        shell: powershell
+        run: ./zero_trust_dns/one_click/Test-OneClickInstaller.ps1
+
+      - name: Verify bootstrap immutable payload
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cmd = Get-Content ./INSTALL-ZEROTRUST-DNS.cmd -Raw
+          $m = [regex]::Match($cmd, 'PAYLOAD_COMMIT=([0-9a-f]{40})')
+          if (-not $m.Success) { throw 'PAYLOAD_COMMIT missing' }
+          $commit = $m.Groups[1].Value
+          $url = "https://raw.githubusercontent.com/KAFKA2306/BestEthernet/$commit/zero_trust_dns/one_click/Install-ZeroTrustDNS.ps1"
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile "$env:RUNNER_TEMP\pinned.ps1"
+          $expected = (Get-FileHash ./zero_trust_dns/one_click/Install-ZeroTrustDNS.ps1 -Algorithm SHA256).Hash
+          $actual = (Get-FileHash "$env:RUNNER_TEMP\pinned.ps1" -Algorithm SHA256).Hash
+          if ($expected -ne $actual) { throw "bootstrap payload differs from reviewed installer: $actual != $expected" }
+          Write-Host "PASS bootstrap payload sha256: $actual"
+
+      - name: Verify official Tailscale MSI and signature
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '1.102.2'
+          $url = "https://pkgs.tailscale.com/stable/tailscale-setup-$version-amd64.msi"
+          $shaText = (Invoke-WebRequest -UseBasicParsing -Uri "$url.sha256").Content
+          $m = [regex]::Match($shaText, '(?i)\b[0-9a-f]{64}\b')
+          if (-not $m.Success) { throw 'official Tailscale checksum missing' }
+          $path = "$env:RUNNER_TEMP\tailscale.msi"
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $path
+          $actual = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $m.Value.ToLowerInvariant()) { throw 'Tailscale MSI SHA-256 mismatch' }
+          $sig = Get-AuthenticodeSignature $path
+          if ($sig.Status -ne 'Valid') { throw "Tailscale MSI Authenticode invalid: $($sig.Status)" }
+          Write-Host "PASS Tailscale $version official checksum + Authenticode"
+
+      - name: Verify official AdGuard Home Windows binary
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '0.107.78'
+          $expected = '481c8666b9ce8cd2ef12d4f758fcf07b40f7eb8a919a70e3355f15b5d84eddbe'
+          $url = "https://github.com/AdguardTeam/AdGuardHome/releases/download/v$version/AdGuardHome_windows_amd64.zip"
+          $zip = "$env:RUNNER_TEMP\AdGuardHome.zip"
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "AdGuard Home SHA-256 mismatch: $actual" }
+          $out = "$env:RUNNER_TEMP\agh"
+          Expand-Archive -LiteralPath $zip -DestinationPath $out -Force
+          $v = & "$out\AdGuardHome\AdGuardHome.exe" --version
+          if (($v | Out-String) -notmatch [regex]::Escape("v$version")) { throw "AdGuard Home version mismatch: $v" }
+          Write-Host "PASS AdGuard Home v$version official archive + executable version"
+
+      - name: Record proof summary
+        shell: powershell
+        run: |
+          @'
+          ## ZeroTrustDNS one-click proof
+          - Windows PowerShell installer parses successfully.
+          - Fail-closed static contract rejects public target binds and plaintext normal upstreams.
+          - Bootstrap is pinned to an immutable Git commit and byte-matches the reviewed installer.
+          - Tailscale 1.102.2 MSI matches its official SHA-256 and has a valid Authenticode signature.
+          - AdGuard Home v0.107.78 Windows amd64 archive matches the pinned official SHA-256 and executable version.
+          - Runtime host/network mutation is intentionally not performed on the shared GitHub runner.
+          '@ | Add-Content -Path $env:GITHUB_STEP_SUMMARY
