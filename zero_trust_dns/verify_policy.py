@@ -71,6 +71,18 @@ def validate(policy: dict) -> None:
     if dns["bootstrap_scope"] != "upstream_hostname_resolution_only":
         raise PolicyError("bootstrap DNS scope must remain limited to encrypted-upstream hostname resolution")
 
+    android = policy["android"]
+    if android["companion_application_id"] != "io.github.kafka2306.zerotrustdns":
+        raise PolicyError("unexpected Android companion application id")
+    if android["vpn_provider_application_id"] != "com.tailscale.ipn":
+        raise PolicyError("Android dataplane must remain the official Tailscale app")
+    if android["canary_domain"] != "ready.zerotrustdns.test":
+        raise PolicyError("Android canary domain changed unexpectedly")
+    if android["companion_declares_vpn_service"]:
+        raise PolicyError("Android companion must not become a VPN provider")
+    if android["companion_privileged_permissions"]:
+        raise PolicyError("Android companion privileged-permission list must stay empty")
+
     logging = policy["logging"]
     if not logging["query_log"]:
         raise PolicyError("query logging is required for local audit")
@@ -98,6 +110,14 @@ def self_test(base: dict) -> None:
     bad_cases.append(("public admin", p))
 
     p = copy.deepcopy(base)
+    p["android"]["companion_declares_vpn_service"] = True
+    bad_cases.append(("Android companion VPN privilege creep", p))
+
+    p = copy.deepcopy(base)
+    p["android"]["vpn_provider_application_id"] = "io.github.kafka2306.zerotrustdns"
+    bad_cases.append(("Android dataplane moved into companion", p))
+
+    p = copy.deepcopy(base)
     p["logging"]["commit_query_logs"] = True
     bad_cases.append(("committed query log", p))
 
@@ -117,6 +137,7 @@ def main() -> int:
     print("PASS policy: clients limited to loopback/Tailscale CGNAT range")
     print("PASS policy: normal upstreams encrypted; bootstrap scope explicit; ECS disabled; DNSSEC DO enabled")
     print("PASS policy: Linux + Windows AdGuard Home artifact SHA-256 pinned")
+    print("PASS policy: Android companion cannot become VPN dataplane or request privileged capabilities")
     print("PASS policy: query logs local-only")
     self_test(policy)
     return 0
