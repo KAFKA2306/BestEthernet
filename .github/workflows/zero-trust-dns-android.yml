@@ -1,0 +1,86 @@
+name: ZeroTrustDNS Android APK
+
+on:
+  pull_request:
+    paths:
+      - "zero_trust_dns/android_companion/**"
+      - "zero_trust_dns/one_click/**"
+      - "INSTALL-ZEROTRUST-DNS.cmd"
+      - ".github/workflows/zero-trust-dns-android.yml"
+  push:
+    branches: [main]
+    paths:
+      - "zero_trust_dns/android_companion/**"
+      - "zero_trust_dns/one_click/**"
+      - "INSTALL-ZEROTRUST-DNS.cmd"
+      - ".github/workflows/zero-trust-dns-android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout pinned action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Java 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle 9.5.0
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Install Android SDK 37
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-37" "build-tools;36.0.0"
+
+      - name: Build and lint installable debug APK
+        shell: bash
+        working-directory: zero_trust_dns/android_companion
+        run: |
+          gradle --no-daemon :app:assembleDebug :app:lintDebug
+
+      - name: Fail closed on Android privilege creep
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="zero_trust_dns/android_companion/app/src/main/AndroidManifest.xml"
+          ! grep -q 'android.permission.BIND_VPN_SERVICE' "$manifest"
+          ! grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' "$manifest"
+          ! grep -q 'android.permission.QUERY_ALL_PACKAGES' "$manifest"
+          ! grep -q 'android.permission.WRITE_SECURE_SETTINGS' "$manifest"
+          ! grep -q 'android.permission.SYSTEM_ALERT_WINDOW' "$manifest"
+          grep -q 'com.tailscale.ipn' "$manifest"
+          grep -q 'ready.zerotrustdns.test' zero_trust_dns/android_companion/app/src/main/java/io/github/kafka2306/zerotrustdns/MainActivity.java
+          echo "PASS Android companion requests no VPN/accessibility/root-like privileges"
+
+      - name: Verify APK signature and record SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="zero_trust_dns/android_companion/app/build/outputs/apk/debug/app-debug.apk"
+          apksigner verify --verbose "$apk"
+          sha256sum "$apk" | tee zero_trust_dns/android_companion/app-debug.apk.sha256
+          cp "$apk" zero_trust_dns/android_companion/ZeroTrustDNS-Android-preview.apk
+
+      - name: Upload installable APK artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ZeroTrustDNS-Android-preview
+          path: |
+            zero_trust_dns/android_companion/ZeroTrustDNS-Android-preview.apk
+            zero_trust_dns/android_companion/app-debug.apk.sha256
+          if-no-files-found: error
+          retention-days: 30
