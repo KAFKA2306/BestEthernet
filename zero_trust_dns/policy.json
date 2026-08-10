@@ -29,6 +29,13 @@
     ],
     "bootstrap_scope": "upstream_hostname_resolution_only"
   },
+  "android": {
+    "companion_application_id": "io.github.kafka2306.zerotrustdns",
+    "vpn_provider_application_id": "com.tailscale.ipn",
+    "canary_domain": "ready.zerotrustdns.test",
+    "companion_declares_vpn_service": false,
+    "companion_privileged_permissions": []
+  },
   "logging": {
     "query_log": true,
     "commit_query_logs": false
