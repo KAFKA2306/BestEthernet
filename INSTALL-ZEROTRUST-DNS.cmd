@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 
-set "PAYLOAD_COMMIT=13b0dd9a6cea87bbd341e8c4e857060b60ab6883"
+set "PAYLOAD_COMMIT=458eabeda4e2321b47719ed3c5caa63fbc4a2895"
 set "PAYLOAD_URL=https://raw.githubusercontent.com/KAFKA2306/BestEthernet/%PAYLOAD_COMMIT%/zero_trust_dns/one_click/Install-ZeroTrustDNS.ps1"
 set "PAYLOAD=%TEMP%\ZeroTrustDNS-Install-%PAYLOAD_COMMIT%.ps1"
 
