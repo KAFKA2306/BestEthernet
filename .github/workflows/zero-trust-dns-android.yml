@@ -44,7 +44,7 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Locate and install Android SDK 37
+      - name: Locate and install Android SDK 36
         id: android-sdk
         shell: bash
         run: |
@@ -59,7 +59,7 @@ jobs:
           echo "sdk_root=$sdk_root" >> "$GITHUB_OUTPUT"
           echo "sdkmanager=$sdkmanager" >> "$GITHUB_OUTPUT"
           yes | "$sdkmanager" --licenses >/dev/null || true
-          "$sdkmanager" "platforms;android-37" "build-tools;36.0.0"
+          "$sdkmanager" "platforms;android-36" "build-tools;36.0.0"
           test -x "$sdk_root/build-tools/36.0.0/apksigner"
           echo "PASS Android SDK tools located at $sdk_root"
 
