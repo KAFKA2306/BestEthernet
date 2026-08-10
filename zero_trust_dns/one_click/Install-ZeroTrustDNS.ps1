@@ -44,17 +44,17 @@ function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        throw '管理者権限が必要です。Install-ZeroTrustDNS.cmd から実行してください。'
+        throw 'Administrator privileges are required. Run Install-ZeroTrustDNS.cmd.'
     }
 }
 
 function Assert-Platform {
     if (-not [Environment]::Is64BitOperatingSystem) {
-        throw 'このMVPは64-bit Windows (amd64) のみ対応です。'
+        throw 'This installer supports 64-bit Windows (amd64) only.'
     }
     $arch = $env:PROCESSOR_ARCHITECTURE
     if ($arch -notin @('AMD64', 'x86')) {
-        throw "このMVPはamd64 Windows向けです。検出: $arch"
+        throw "This installer supports amd64 Windows only. Detected: $arch"
     }
 }
 
@@ -99,7 +99,7 @@ function Install-TailscaleIfNeeded {
 
     $hashText = (Invoke-WebRequest -UseBasicParsing -Uri $TailscaleMsiHashUrl).Content
     $m = [regex]::Match($hashText, '(?i)\b[0-9a-f]{64}\b')
-    if (-not $m.Success) { throw 'Tailscale公式sha256ファイルを解析できません。' }
+    if (-not $m.Success) { throw 'Could not parse the official Tailscale SHA-256 file.' }
     $expected = $m.Value.ToLowerInvariant()
 
     $msi = Join-Path $Downloads "tailscale-setup-$TailscaleVersion-amd64.msi"
@@ -113,7 +113,7 @@ function Install-TailscaleIfNeeded {
 
     Start-Sleep -Seconds 2
     $exe = Get-TailscaleExe
-    if (-not $exe) { throw 'Tailscaleのインストール後にtailscale.exeを検出できません。' }
+    if (-not $exe) { throw 'tailscale.exe was not found after MSI installation.' }
     return $exe
 }
 
@@ -144,8 +144,8 @@ function Connect-Tailscale {
         $env:TS_AUTH_KEY = $null
     } else {
         Write-Host ''
-        Write-Host 'Tailscaleの初回認証が必要です。表示されるブラウザ/URLで認証してください。' -ForegroundColor Yellow
-        Write-Host '認証後、この処理は自動で続行します。' -ForegroundColor Yellow
+        Write-Host 'Tailscale first-time authentication is required. Complete the browser/URL sign-in.' -ForegroundColor Yellow
+        Write-Host 'The installer continues automatically after authentication.' -ForegroundColor Yellow
         Write-Host ''
         & $TailscaleExe up --unattended=true --accept-dns=false
     }
@@ -158,7 +158,7 @@ function Connect-Tailscale {
         }
         Start-Sleep -Seconds 2
     }
-    throw 'Tailscaleの100.64.0.0/10アドレスを取得できません。'
+    throw 'Could not obtain a Tailscale IPv4 address in 100.64.0.0/10.'
 }
 
 function New-RandomPassword {
@@ -451,28 +451,28 @@ try {
 
     Write-Log '=== server-side setup READY ==='
     Write-Host ''
-    Write-Host 'ZeroTrustDNS のサーバー側セットアップは完了しました。' -ForegroundColor Green
+    Write-Host 'ZeroTrustDNS server-side setup is complete.' -ForegroundColor Green
     Write-Host "DNS server: $tailIp" -ForegroundColor Green
     Write-Host ''
-    Write-Host 'Androidを含む全tailnet端末へ強制適用するには、Tailscale管理画面のDNSで' -ForegroundColor Yellow
-    Write-Host "Global nameserver = $tailIp を設定し、Override DNS servers を有効にしてください。" -ForegroundColor Yellow
-    Write-Host 'これはTailscale管理者のcontrol-plane操作であり、このインストーラは勝手に変更しません。' -ForegroundColor Yellow
+    Write-Host 'To force this DNS across the tailnet, open the Tailscale DNS admin page and set:' -ForegroundColor Yellow
+    Write-Host "Global nameserver = $tailIp, then enable Override DNS servers." -ForegroundColor Yellow
+    Write-Host 'This is a Tailscale administrator control-plane action and is not silently changed by this installer.' -ForegroundColor Yellow
 
     Set-Clipboard -Value $tailIp -ErrorAction SilentlyContinue
     Start-Process 'https://login.tailscale.com/admin/dns'
 
     if (-not $NonInteractive) {
         Write-Host ''
-        Read-Host 'Enterで閉じる'
+        Read-Host 'Press Enter to close'
     }
     exit 0
 } catch {
     try { Write-Log ("FAILED: " + $_.Exception.Message) } catch {}
     Write-Host ''
-    Write-Host ('セットアップ失敗: ' + $_.Exception.Message) -ForegroundColor Red
-    Write-Host "ログ: $LogPath" -ForegroundColor Red
+    Write-Host ('Setup failed: ' + $_.Exception.Message) -ForegroundColor Red
+    Write-Host "Log: $LogPath" -ForegroundColor Red
     if (-not $NonInteractive) {
-        Read-Host 'Enterで閉じる'
+        Read-Host 'Press Enter to close'
     }
     exit 1
 }
