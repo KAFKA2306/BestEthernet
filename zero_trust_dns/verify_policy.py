@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""Fail-closed validator for the zero-trust DNS policy contract."""
+
+from __future__ import annotations
+
+import copy
+import ipaddress
+import json
+import pathlib
+import re
+import sys
+
+POLICY_PATH = pathlib.Path(__file__).with_name("policy.json")
+TAILSCALE_V4 = ipaddress.ip_network("100.64.0.0/10")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+ENCRYPTED_PREFIXES = ("tls://", "https://", "h3://", "quic://")
+
+
+class PolicyError(ValueError):
+    pass
+
+
+def validate(policy: dict) -> None:
+    if policy.get("schema_version") != 1:
+        raise PolicyError("unsupported schema_version")
+
+    agh = policy["adguard_home"]
+    if not re.fullmatch(r"0\.107\.\d+", agh["version"]):
+        raise PolicyError("AdGuard Home must be pinned to an explicit stable 0.107.x release")
+    if not SHA256_RE.fullmatch(agh["linux_amd64_sha256"]):
+        raise PolicyError("AdGuard Home artifact must be pinned by SHA-256")
+
+    network = policy["network"]
+    if network["public_dns_listener"]:
+        raise PolicyError("public DNS listener is forbidden")
+    if network["admin_public"]:
+        raise PolicyError("public admin UI is forbidden")
+    if not network["tailscale_required"]:
+        raise PolicyError("authenticated private transport is required")
+
+    allowed = network["allowed_client_cidrs"]
+    if not allowed:
+        raise PolicyError("allowed_client_cidrs must not be empty")
+    for value in allowed:
+        net = ipaddress.ip_network(value, strict=True)
+        ok = net.is_loopback or (
+            net.version == 4 and net.subnet_of(TAILSCALE_V4)
+        )
+        if not ok:
+            raise PolicyError(f"client CIDR is outside loopback/tailnet policy: {value}")
+
+    dns = policy["dns"]
+    if not dns["dnssec_do"]:
+        raise PolicyError("DNSSEC DO flag must stay enabled")
+    if dns["edns_client_subnet"]:
+        raise PolicyError("EDNS Client Subnet must stay disabled")
+    if not dns["encrypted_upstreams_only"]:
+        raise PolicyError("plaintext upstream DNS is forbidden")
+    upstreams = dns["upstreams"]
+    if not upstreams:
+        raise PolicyError("at least one encrypted upstream is required")
+    for upstream in upstreams:
+        if not upstream.startswith(ENCRYPTED_PREFIXES):
+            raise PolicyError(f"plaintext/unknown upstream rejected: {upstream}")
+
+    logging = policy["logging"]
+    if not logging["query_log"]:
+        raise PolicyError("query logging is required for local audit")
+    if logging["commit_query_logs"]:
+        raise PolicyError("query logs must never be committed to Git")
+
+
+def self_test(base: dict) -> None:
+    bad_cases = []
+
+    p = copy.deepcopy(base)
+    p["network"]["allowed_client_cidrs"] = ["0.0.0.0/0"]
+    bad_cases.append(("public client CIDR", p))
+
+    p = copy.deepcopy(base)
+    p["dns"]["upstreams"] = ["9.9.9.9"]
+    bad_cases.append(("plaintext upstream", p))
+
+    p = copy.deepcopy(base)
+    p["network"]["admin_public"] = True
+    bad_cases.append(("public admin", p))
+
+    p = copy.deepcopy(base)
+    p["logging"]["commit_query_logs"] = True
+    bad_cases.append(("committed query log", p))
+
+    for name, candidate in bad_cases:
+        try:
+            validate(candidate)
+        except PolicyError:
+            print(f"PASS fail-closed: {name}")
+        else:
+            raise AssertionError(f"unsafe policy was accepted: {name}")
+
+
+def main() -> int:
+    policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
+    validate(policy)
+    print("PASS policy: no public DNS/admin exposure")
+    print("PASS policy: clients limited to loopback/Tailscale CGNAT range")
+    print("PASS policy: encrypted upstreams only; ECS disabled; DNSSEC DO enabled")
+    print("PASS policy: AdGuard Home artifact SHA-256 pinned")
+    print("PASS policy: query logs local-only")
+    self_test(policy)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        print(f"FAIL policy: {exc}", file=sys.stderr)
+        raise SystemExit(1)

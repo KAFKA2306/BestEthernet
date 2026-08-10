@@ -1,0 +1,99 @@
+name: Zero-trust DNS proof
+
+on:
+  pull_request:
+    paths:
+      - "zero_trust_dns/**"
+      - ".github/workflows/zero-trust-dns-poc.yml"
+  push:
+    branches: [main]
+    paths:
+      - "zero_trust_dns/**"
+      - ".github/workflows/zero-trust-dns-poc.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout pinned action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fail-closed policy tests
+        run: python3 zero_trust_dns/verify_policy.py
+
+      - name: Verify pinned AdGuard Home release
+        env:
+          AGH_VERSION: "0.107.78"
+          AGH_SHA256: "2070f644644be8299232f4a7bff857036fb1423563c1bf8c787e07aaf4f88278"
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/AdGuardHome_linux_amd64.tar.gz"
+          url="https://github.com/AdguardTeam/AdGuardHome/releases/download/v${AGH_VERSION}/AdGuardHome_linux_amd64.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error "$url" --output "$archive"
+          printf '%s  %s\n' "$AGH_SHA256" "$archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/AdGuardHome/AdGuardHome" --version | tee "$RUNNER_TEMP/adguard-version.txt"
+          grep -F "v${AGH_VERSION}" "$RUNNER_TEMP/adguard-version.txt"
+
+      - name: Runtime smoke stays on loopback
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/agh-work"
+          mkdir -p "$work"
+          bin="$RUNNER_TEMP/AdGuardHome/AdGuardHome"
+          sudo "$bin" --no-check-update --web-addr 127.0.0.1:3000 -w "$work" >"$RUNNER_TEMP/agh.log" 2>&1 &
+          pid=$!
+          trap 'sudo kill "$pid" 2>/dev/null || true' EXIT
+
+          ready=0
+          for _ in $(seq 1 15); do
+            if curl --fail --silent http://127.0.0.1:3000/control/install/get_addresses >"$RUNNER_TEMP/addresses.json"; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat "$RUNNER_TEMP/agh.log" >&2 || true
+            exit 1
+          fi
+
+          curl --fail --silent --show-error \
+            -H 'Content-Type: application/json' \
+            -X POST http://127.0.0.1:3000/control/install/check_config \
+            --data '{"web":{"port":3001,"ip":"127.0.0.1"},"dns":{"port":5353,"ip":"127.0.0.1","autofix":false},"set_static_ip":false}' \
+            >"$RUNNER_TEMP/check.json"
+
+          python3 - "$RUNNER_TEMP/check.json" <<'PY'
+          import json, pathlib, sys
+          data = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          failures = {k: v.get("status", "") for k, v in data.items() if isinstance(v, dict) and v.get("status", "")}
+          if failures:
+              raise SystemExit(f"unsafe/unavailable loopback bind: {failures}")
+          print("PASS runtime: installer API accepted loopback-only web/DNS bind")
+          PY
+
+          if ss -lnt | awk '{print $4}' | grep -Eq '(^|:)(0\.0\.0\.0|\[::\]):3000$'; then
+            echo "FAIL runtime: installer exposed on wildcard address" >&2
+            exit 1
+          fi
+          ss -lnt | grep -F '127.0.0.1:3000'
+          echo "PASS runtime: installer listener is loopback-bound"
+
+      - name: Record proof summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## Zero-trust DNS proof
+          - Policy validator passed including negative fail-closed cases.
+          - AdGuard Home v0.107.78 Linux amd64 artifact matched the pinned SHA-256.
+          - The official binary started with its web installer bound to `127.0.0.1` only.
+          - AdGuard Home's install API accepted loopback-only web and DNS target binds.
+          - The policy forbids public DNS/admin exposure, plaintext upstream DNS, ECS, and committing query logs.
+          EOF
