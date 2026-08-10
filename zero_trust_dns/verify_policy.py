@@ -14,6 +14,7 @@ POLICY_PATH = pathlib.Path(__file__).with_name("policy.json")
 TAILSCALE_V4 = ipaddress.ip_network("100.64.0.0/10")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 ENCRYPTED_PREFIXES = ("tls://", "https://", "h3://", "quic://")
+QUAD9_BOOTSTRAP = {"9.9.9.9", "149.112.112.112"}
 
 
 class PolicyError(ValueError):
@@ -27,8 +28,9 @@ def validate(policy: dict) -> None:
     agh = policy["adguard_home"]
     if not re.fullmatch(r"0\.107\.\d+", agh["version"]):
         raise PolicyError("AdGuard Home must be pinned to an explicit stable 0.107.x release")
-    if not SHA256_RE.fullmatch(agh["linux_amd64_sha256"]):
-        raise PolicyError("AdGuard Home artifact must be pinned by SHA-256")
+    for key in ("linux_amd64_sha256", "windows_amd64_sha256"):
+        if not SHA256_RE.fullmatch(agh[key]):
+            raise PolicyError(f"AdGuard Home {key} must be pinned by SHA-256")
 
     network = policy["network"]
     if network["public_dns_listener"]:
@@ -55,13 +57,19 @@ def validate(policy: dict) -> None:
     if dns["edns_client_subnet"]:
         raise PolicyError("EDNS Client Subnet must stay disabled")
     if not dns["encrypted_upstreams_only"]:
-        raise PolicyError("plaintext upstream DNS is forbidden")
+        raise PolicyError("plaintext normal upstream DNS is forbidden")
     upstreams = dns["upstreams"]
     if not upstreams:
         raise PolicyError("at least one encrypted upstream is required")
     for upstream in upstreams:
         if not upstream.startswith(ENCRYPTED_PREFIXES):
-            raise PolicyError(f"plaintext/unknown upstream rejected: {upstream}")
+            raise PolicyError(f"plaintext/unknown normal upstream rejected: {upstream}")
+
+    bootstrap = set(dns["bootstrap_dns"])
+    if not bootstrap or not bootstrap.issubset(QUAD9_BOOTSTRAP):
+        raise PolicyError("bootstrap DNS must stay inside the pinned Quad9 bootstrap set")
+    if dns["bootstrap_scope"] != "upstream_hostname_resolution_only":
+        raise PolicyError("bootstrap DNS scope must remain limited to encrypted-upstream hostname resolution")
 
     logging = policy["logging"]
     if not logging["query_log"]:
@@ -79,7 +87,11 @@ def self_test(base: dict) -> None:
 
     p = copy.deepcopy(base)
     p["dns"]["upstreams"] = ["9.9.9.9"]
-    bad_cases.append(("plaintext upstream", p))
+    bad_cases.append(("plaintext normal upstream", p))
+
+    p = copy.deepcopy(base)
+    p["dns"]["bootstrap_dns"] = ["8.8.8.8"]
+    bad_cases.append(("unapproved bootstrap resolver", p))
 
     p = copy.deepcopy(base)
     p["network"]["admin_public"] = True
@@ -103,8 +115,8 @@ def main() -> int:
     validate(policy)
     print("PASS policy: no public DNS/admin exposure")
     print("PASS policy: clients limited to loopback/Tailscale CGNAT range")
-    print("PASS policy: encrypted upstreams only; ECS disabled; DNSSEC DO enabled")
-    print("PASS policy: AdGuard Home artifact SHA-256 pinned")
+    print("PASS policy: normal upstreams encrypted; bootstrap scope explicit; ECS disabled; DNSSEC DO enabled")
+    print("PASS policy: Linux + Windows AdGuard Home artifact SHA-256 pinned")
     print("PASS policy: query logs local-only")
     self_test(policy)
     return 0
