@@ -41,10 +41,17 @@ jobs:
           $commit = $m.Groups[1].Value
           $url = "https://raw.githubusercontent.com/KAFKA2306/BestEthernet/$commit/zero_trust_dns/one_click/Install-ZeroTrustDNS.ps1"
           Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile "$env:RUNNER_TEMP\pinned.ps1"
-          $expected = (Get-FileHash ./zero_trust_dns/one_click/Install-ZeroTrustDNS.ps1 -Algorithm SHA256).Hash
-          $actual = (Get-FileHash "$env:RUNNER_TEMP\pinned.ps1" -Algorithm SHA256).Hash
-          if ($expected -ne $actual) { throw "bootstrap payload differs from reviewed installer: $actual != $expected" }
-          Write-Host "PASS bootstrap payload sha256: $actual"
+          $expectedText = (Get-Content ./zero_trust_dns/one_click/Install-ZeroTrustDNS.ps1 -Raw).Replace("`r`n", "`n")
+          $actualText = (Get-Content "$env:RUNNER_TEMP\pinned.ps1" -Raw).Replace("`r`n", "`n")
+          if ($expectedText -cne $actualText) { throw 'bootstrap payload content differs from reviewed installer' }
+          $sha = [Security.Cryptography.SHA256]::Create()
+          try {
+            $bytes = [Text.Encoding]::UTF8.GetBytes($actualText)
+            $actual = ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '')
+          } finally {
+            $sha.Dispose()
+          }
+          Write-Host "PASS bootstrap canonical-content sha256: $actual"
 
       - name: Verify official Tailscale MSI and signature
         shell: powershell
@@ -87,7 +94,7 @@ jobs:
           ## ZeroTrustDNS one-click proof
           - Windows PowerShell installer parses successfully.
           - Fail-closed static contract rejects public target binds and plaintext normal upstreams.
-          - Bootstrap is pinned to an immutable Git commit and byte-matches the reviewed installer.
+          - Bootstrap is pinned to an immutable Git commit and canonical content exactly matches the reviewed installer.
           - Tailscale 1.102.2 MSI matches its official SHA-256 and has a valid Authenticode signature.
           - AdGuard Home v0.107.78 Windows amd64 archive matches the pinned official SHA-256 and executable version.
           - Runtime host/network mutation is intentionally not performed on the shared GitHub runner.
