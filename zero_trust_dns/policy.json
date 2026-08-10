@@ -2,7 +2,8 @@
   "schema_version": 1,
   "adguard_home": {
     "version": "0.107.78",
-    "linux_amd64_sha256": "2070f644644be8299232f4a7bff857036fb1423563c1bf8c787e07aaf4f88278"
+    "linux_amd64_sha256": "2070f644644be8299232f4a7bff857036fb1423563c1bf8c787e07aaf4f88278",
+    "windows_amd64_sha256": "481c8666b9ce8cd2ef12d4f758fcf07b40f7eb8a919a70e3355f15b5d84eddbe"
   },
   "network": {
     "public_dns_listener": false,
@@ -21,7 +22,12 @@
     "upstreams": [
       "tls://dns.quad9.net",
       "https://dns.quad9.net/dns-query"
-    ]
+    ],
+    "bootstrap_dns": [
+      "9.9.9.9",
+      "149.112.112.112"
+    ],
+    "bootstrap_scope": "upstream_hostname_resolution_only"
   },
   "logging": {
     "query_log": true,
