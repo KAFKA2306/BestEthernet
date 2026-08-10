@@ -1,0 +1,6 @@
+# Never commit DNS query/audit payloads or runtime state.
+logs/
+work/
+AdGuardHome.yaml
+*.log
+*.db
