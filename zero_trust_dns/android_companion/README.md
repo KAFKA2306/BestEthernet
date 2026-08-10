@@ -35,7 +35,7 @@ Android companionは、単に「VPNアイコンが出ている」だけでは成
 - Android Gradle Plugin 9.3.1
 - Gradle 9.5.0
 - JDK 17
-- compile / target SDK 37
+- compile / target SDK 36 (Android 16)
 - lint
 - VPN / Accessibility / QUERY_ALL_PACKAGES / WRITE_SECURE_SETTINGS / overlay権限が増えていないことをfail-close検査
 - `apksigner verify`
@@ -57,6 +57,8 @@ Android公式ではAlways-on VPNを無操作で設定できる`DevicePolicyManag
 
 ## 一次情報
 
+- Android 16 / API 36: https://developer.android.com/about/versions/16/behavior-changes-16
+- Google Play target API requirement: https://developer.android.com/google/play/requirements/target-sdk
 - Tailscale Android: https://tailscale.com/docs/install/android
 - Tailscale Android MDM: https://tailscale.com/docs/integrations/mdm/android
 - Tailscale DNS override: https://tailscale.com/docs/reference/dns-in-tailscale
