@@ -1,217 +1,126 @@
-# VRネットワーク最適化プロジェクト：BestEthernet
+# BestEthernet
 
-**旅先のVRで必要なのは、「一番速そうな回線」を固定することではない。測って、選び直せることだ。**
+旅先や会場で使える回線を固定的に決めず、**その場で候補を測定し、根拠を残して選び直す**ための Windows 向けツール群です。
 
-このリポジトリの実測では、最適なネットワークは日によって変わり、100 Mbps要件を満たしたのはiPhone (Vodafone)でも9回中3回でした。BestEthernetは、その変動を前提に回線を測定・選択し、PCホットスポット経由でHMDへつなぐためのツール群です。
+## Vision
 
-## 1. プロジェクトの背景と目的
+ホテル Wi-Fi、スマートフォン回線、有線 LAN など複数の経路が使える環境で、ブランド名や過去の平均値ではなく、現在の測定結果から接続先を判断できるようにします。
 
-VR（仮想現実）体験の品質を最大化するためには、安定した高速ネットワーク接続が不可欠です。本プロジェクトは、多様なネットワーク環境（ホテルWi-Fi、モバイルデータ等）での安定運用を目指し、以下の要件を満たすソリューションの開発を目的としています：
+## Design philosophy
 
-- 必要なビットレート：最低100 Mbps、推奨150 Mbps
-- 多様なネットワーク環境での安定運用
+- 回線種別ではなく実測値で比較する。
+- latency、download、upload を別々に記録する。
+- requested interface と actual interface が一致しない測定を正常値として扱わない。
+- 測定前のアダプター状態を復元する。
+- 過去の測定値を現在の品質保証として使わない。
+- HMD と PC のローカル無線品質と、PC からインターネットへの uplink 品質を混同しない。
+- 閾値は利用者が定める判定条件であり、VR、VRChat、HMD、会場 Wi-Fi、イベント品質の保証とは扱わない。
 
-## 2. ネットワーク構成の問題点
+## Why
 
-以下の画像は、異なるネットワーク構成とその問題点を示しています：
+Windows の設定画面を行き来しながら勘で回線を選ぶ代わりに、候補インターフェースを同じ方法で測定し、測定経路・結果・失敗理由を保存できます。複数回の測定がある場合は、既存の `network_readiness.py` で候補ごとの集計と primary / fallback 候補を生成できます。
 
-![ネットワーク構成図](config.png)
+## 現在実装されていること
 
-この画像には、3つの異なるネットワーク構成が示されています：
+### 回線測定
 
-1. **理想的な構成（問題あり）**：
-   - ホテルWi-Fi → かふかルーター → HMD
-   - この構成では、ルーターがWANとしてWLANを選択できない問題が指摘されています。
+`speed_test_and_select.py` は Windows の `Get-NetAdapter`、`Get-NetIPConfiguration`、`Get-NetRoute` を使って接続中の物理アダプターを列挙し、loopback、VPN、Hyper-V、WSL、Bluetooth、TAP、TUN、WireGuard などを既定で除外します。
 
-2. **実現しない構成**：
-   - ホテルWi-Fi → かふかPC（イーサネット共有） → かふかルーター → HMD
-   - この構成では、PC-ルーター間の有線接続が実現できない問題があります。
+`speedtest-cli` は対象アダプターの IPv4 source address に bind して実行され、以下を `SpeedSample` として記録します。
 
-3. **妥協の構成**：
-   - ホテルWi-Fi → かふかスマホ → かふかPC → HMD
-   - この構成は、前述のBestEthernetソリューションに近い形態です。
+- requested interface
+- actual interface
+- source IP
+- gateway
+- measurement server
+- timestamp
+- latency
+- download Mbps
+- upload Mbps
+- success / failure reason
+- optional job ID
 
-これらの構成の問題点を解決するために、BestEthernetソリューションでは、PCを中心としたホットスポット接続を採用しています。
+測定時に候補アダプターを分離した場合も、処理後は元の administrative state へ復元します。route は監査用に読み取りますが、このスクリプトは route を変更しません。
 
-## 3. BestEthernetソリューション
-
-### 3.1 ネットワーク構成
-
-プロジェクトで採用した最適なネットワーク構成は、PC経由のホットスポット接続です。
-
-```mermaid
-graph LR
-    A[ホテルWi-Fi/スマホ回線] --> B[PC]
-    B -->|ホットスポット| C[HMD]
-    B -->|ホットスポット| D[その他のデバイス]
-```
-
-**説明**：
-- PCがホテルWi-FiまたはスマホのUSBテザリングで接続
-- PCでWindows標準のモバイルホットスポット機能を有効化
-- HMDとその他のデバイスがPCのホットスポットに接続
-
-**利点**：
-1. 柔軟性：ホテルWi-Fiとスマホ回線の両方に対応可能
-2. 安定性：PCを介することで接続の安定性が向上
-3. パフォーマンス：PCの処理能力を活用して最適な接続を維持
-
-### 3.2 BestEthernetアプリケーション
-
-環境に応じて最適なネットワーク接続を自動的に選択・設定するBestEthernetアプリケーションを開発しました。
-
-#### 主な機能
-1. 利用可能なネットワークの検出
-2. 各ネットワークの速度とパフォーマンスのリアルタイム測定
-3. VR要件に基づく最適なネットワークの自動選択
-4. 選択されたネットワークへの自動接続とPCホットスポットの設定
-5. ユーザーインターフェースを通じた手動制御オプション
-
-#### 動作フロー
-1. アプリ起動時に利用可能なすべてのネットワークをスキャン
-2. 各ネットワークの速度テストを実行（`speed_test_and_select.py`）
-3. 最高のパフォーマンスを示すネットワークを選択
-4. 選択されたネットワークに自動接続
-5. PCのモバイルホットスポット機能を自動的に有効化（`hotspot_activator.py`）
-6. 接続状態を継続的にモニタリングし、必要に応じて再最適化
-
-## 5. BestEthernetユーザーガイド
-
-### 5.1 主要機能と使用方法
-
-#### 最速のネットワーク接続を自動で選択
-**使用ツール**: `speed_test_and_select.py`
-```
+```powershell
+python speed_test_and_select.py --dry-run
 python speed_test_and_select.py
 ```
 
-#### ネットワーク接続を手動で切り替え
-**使用ツール**: `ethernet_switcher_gui.py`
-```
-python ethernet_switcher_gui.py
-```
+live measurement には `speedtest-cli` が必要です。
 
-#### モバイルホットスポットを開始
-**使用ツール**: `hotspot_activator.py`
-```
-python hotspot_activator.py
-```
+### 複数回測定の集計
 
-#### モバイルホットスポット用のインターフェースを選択
-**使用ツール**: `hotspot_interface_selector.py`
-```
-python hotspot_interface_selector.py
-```
+`network_readiness.py` は既存の JSONL 測定ログを読み込み、候補ごとに次を計算します。
 
-#### 全てのネットワークインターフェースを有効化
-**使用ツール**: `enable_all_interfaces.py`
-```
-python enable_all_interfaces.py
-```
+- sample count / successful sample count
+- latency median
+- download median / minimum
+- upload median / minimum
+- configured thresholds を満たしたか
+- rejected sample の理由
+- primary / fallback candidate
 
-### 5.2 システム構成図
+必要サンプル数は 3 以上です。requested interface と actual interface が一致しない測定、失敗した測定、数値が不正な測定は集計対象から除外されます。公開レポートでは source IP / gateway をマスクできます。
 
-```mermaid
-graph TD
-    A[speed_test_and_select.py] -->|速度測定・選択| B[イーサネットインターフェース]
-    C[ethernet_switcher_gui.py] -->|手動切り替え| B
-    D[hotspot_activator.py] -->|有効化| E[モバイルホットスポット]
-    F[enable_all_interfaces.py] -->|全有効化| B
-    G[hotspot_interface_selector.py] -->|インターフェース選択| E
-    B -->|使用| E
-    H[ユーザー] -->|操作| C
-    H -->|操作| G
-    H -->|使用| A
-    H -->|使用| D
-    H -->|使用| F
-```
+判定結果は、設定された閾値に対する比較です。VR が利用可能であることを自動的に証明するものではありません。
 
-### 5.3 注意事項とトラブルシューティング
+### Windows Mobile Hotspot
 
-- すべてのツールはWindows環境専用です。
-- 一部の機能には管理者権限が必要です。
+この repository には `hotspot_activator.py` と `hotspot_interface_selector.py` があります。Windows 自体も Wi-Fi、Ethernet、cellular data connection を Mobile Hotspot で他端末へ共有できます。
 
+Microsoft の現行手順:
+https://support.microsoft.com/windows/use-your-windows-device-as-a-mobile-hotspot-c89b0fad-72d5-41e8-f7ea-406ad9036b85
 
-## 4. 実績データ事例
+### 手動操作
 
-### 4.1 データ概要
+- `ethernet_switcher_gui.py` — interface の手動切替
+- `enable_all_interfaces.py` — network interface の有効化
+- `hotspot_activator.py` — Mobile Hotspot 操作
+- `hotspot_interface_selector.py` — Hotspot の共有元 interface 選択
 
-- **期間**: 2024年3月2日 〜 2024年10月22日
-- **総測定回数**: 54回
-- **分析対象ネットワーク**: 
-  1. hotel/イーサネット
-  2. iPhone (Vodafone)
-  3. Android (O2)
+一部の Windows network 操作には管理者権限が必要です。
 
-## 2. ネットワーク別パフォーマンス
+## VRChat のネットワーク要件との関係
 
-### 2.1 hotel/イーサネット
-- **測定回数**: 31回
-- **平均速度**: 10.1 Mbps (ダウンロード) / 16.0 Mbps (アップロード)
-- **最高速度**: 114.2 Mbps (ダウンロード) / 82.6 Mbps (アップロード)
-- **最低速度**: 0.1 Mbps (ダウンロード) / 0.5 Mbps (アップロード)
-- **特徴**: 極端な速度変動、安定性に欠ける
+この repository の旧 README では「最低 100 Mbps、推奨 150 Mbps」を一般的な VR 要件として記載していましたが、現在の VRChat 公式 System Requirements は network について **Broadband Internet Connection (25+ megabit preferred)** としています。そのため 100 / 150 Mbps を VRChat の一般要件としては扱いません。
 
-### 2.2 iPhone (Vodafone)
-- **測定回数**: 9回
-- **平均速度**: 73.4 Mbps (ダウンロード) / 32.8 Mbps (アップロード)
-- **最高速度**: 129.9 Mbps (ダウンロード) / 55.4 Mbps (アップロード)
-- **最低速度**: 24.8 Mbps (ダウンロード) / 11.8 Mbps (アップロード)
-- **特徴**: 高速で安定、VR要件を満たす可能性が高い
+VRChat 公式 System Requirements:
+https://help.vrchat.com/hc/en-us/articles/1500002378722-System-Requirements
 
-### 2.3 Android (O2)
-- **測定回数**: 7回
-- **平均速度**: 18.6 Mbps (ダウンロード) / 9.6 Mbps (アップロード)
-- **最高速度**: 24.8 Mbps (ダウンロード) / 11.9 Mbps (アップロード)
-- **最低速度**: 4.0 Mbps (ダウンロード) / 2.9 Mbps (アップロード)
-- **特徴**: 中程度の速度、比較的安定
+また、internet uplink の speed test は PC↔HMD 間の Wi-Fi 品質を直接測定しません。無線 PCVR を評価するときは、この2つを別の経路として確認してください。
 
-## 3. 時系列分析
+## 過去の測定データ
 
-### 3.1 期間別の傾向
-1. **初期 (3月2日〜3日)**
-   - iPhoneが最高速度を記録
-   - hotel/イーサネットで大きな速度変動
+repository には 2024 年 3 月 2 日から 2024 年 10 月 22 日までの測定記録があります。これらは**過去の観測例**であり、現在の hotel Wi-Fi、Vodafone、O2 等の性能保証ではありません。
 
-2. **中期 (3月4日〜8日)**
-   - 全体的に速度が低下し安定化
-   - O2とhotel/イーサネットが似たパフォーマンス
+過去の集計:
+- [`results.md`](results.md)
+- [`examples.md`](examples.md)
 
-3. **後期 (10月22日)**
-   - hotel/イーサネットが大幅に改善
-   - O2は中期と同程度のパフォーマンス
+同じ回線でも測定時刻や場所によって結果が変わるため、利用時点で再測定してください。
 
-### 3.2 VR要件 (100 Mbps) 達成率
-- hotel/イーサネット: 6.5% (2/31回)
-- iPhone (Vodafone): 33.3% (3/9回)
-- Android (O2): 0% (0/7回)
+## 基本的な利用順序
 
-## 4. 主要な観察結果
+1. `python speed_test_and_select.py --dry-run` で候補を確認する。
+2. live measurement を実行して JSONL / CSV へ結果を残す。
+3. 必要なら同じ `job_id` で各候補を複数回測る。
+4. `network_readiness.py` で複数回測定を集計する。
+5. 測定結果と実際の用途を見て回線を選ぶ。
+6. 必要なら Windows Mobile Hotspot で接続を共有する。
+7. 状況が変わったら再測定する。
 
-1. **明確なパフォーマンス階層**:
-   iPhone > O2 > hotel/イーサネット
+## 検証
 
-2. **hotel/イーサネットの不安定性**:
-   同日内で82.6 Mbpsから24.1 Mbpsへの急激な低下を観測
+GitHub Actions の `Test network safety` で、測定ロジック、interface safety、状態復元、network readiness 集計を検証しています。
 
-3. **iPhoneの一貫した高性能**:
-   全測定で24 Mbps以上を記録
+Repository:
+https://github.com/KAFKA2306/BestEthernet
 
-4. **O2の安定した中程度のパフォーマンス**:
-   VR要件には不十分だが、一貫性がある
+## 制約
 
-### 4.3 重要な観察事項
-
-1. **ネットワーク変動**：同じネットワークでも日や時間帯によって大きく性能が変動。
-2. **VR要件達成率**：
-   - ホテルWi-Fi：16.7% (3/18回)
-   - モバイルデータ：23.1% (3/13回)
-   - 有線接続：0% (0/13回)
-3. **最適ネットワークの日変動**：日によって最適なネットワークが異なる。
-4. **長期的傾向**：3月初旬は大きな変動と高速接続の機会があったが、中旬以降は全体的に安定し、速度は低下（約24/12 Mbps前後）。
-
-
-
-## 6. 結論
-
-BestEthernetソリューションは、PCを中心としたネットワーク構成と自動最適化アプリケーションにより、多様な環境下でのVR体験に必要な高品質なネットワーク接続を実現しました。具体的なネットワーク構成図と実績データ分析により、本ソリューションの有効性が示されています。
+- 主要な network 操作は Windows 向けです。
+- live speed test は外部の測定 server とネットワーク状態に依存します。
+- 測定値は将来の品質を保証しません。
+- `network_readiness.py` の閾値は利用者設定であり、製品・サービス公式の性能要件ではありません。
+- repository の測定は internet uplink を中心に扱い、PC↔HMD のローカル無線リンクそのものを測定するものではありません。
