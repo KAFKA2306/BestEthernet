@@ -20,6 +20,40 @@
 
 Windows の設定画面を行き来しながら勘で回線を選ぶ代わりに、候補インターフェースを同じ方法で測定し、測定経路・結果・失敗理由を保存できます。複数回の測定がある場合は、既存の `network_readiness.py` で候補ごとの集計と primary / fallback 候補を生成できます。
 
+## ネットワーク構成図
+
+README で従来紹介していた構成図です。
+
+![ネットワーク構成図](config.png)
+
+PC の Mobile Hotspot を利用する場合の構成例です。
+
+```mermaid
+graph LR
+    A[ホテルWi-Fi/スマホ回線] --> B[PC]
+    B -->|ホットスポット| C[HMD]
+    B -->|ホットスポット| D[その他のデバイス]
+```
+
+各スクリプトの関係も、従来の README の図を保持します。
+
+```mermaid
+graph TD
+    A[speed_test_and_select.py] -->|速度測定・選択| B[イーサネットインターフェース]
+    C[ethernet_switcher_gui.py] -->|手動切り替え| B
+    D[hotspot_activator.py] -->|有効化| E[モバイルホットスポット]
+    F[enable_all_interfaces.py] -->|全有効化| B
+    G[hotspot_interface_selector.py] -->|インターフェース選択| E
+    B -->|使用| E
+    H[ユーザー] -->|操作| C
+    H -->|操作| G
+    H -->|使用| A
+    H -->|使用| D
+    H -->|使用| F
+```
+
+図は構成とツールの関係を示すもので、回線品質や自動切替の保証を意味しません。
+
 ## 現在実装されていること
 
 ### 回線測定
