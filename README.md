@@ -1,5 +1,9 @@
 # BestEthernet
 
+[![Test network safety](https://github.com/KAFKA2306/BestEthernet/actions/workflows/test-network-safety.yml/badge.svg)](https://github.com/KAFKA2306/BestEthernet/actions/workflows/test-network-safety.yml)
+[![ZeroTrustDNS Android APK](https://github.com/KAFKA2306/BestEthernet/actions/workflows/zero-trust-dns-android.yml/badge.svg)](https://github.com/KAFKA2306/BestEthernet/actions/workflows/zero-trust-dns-android.yml)
+[![ZeroTrustDNS one-click proof](https://github.com/KAFKA2306/BestEthernet/actions/workflows/zero-trust-dns-one-click.yml/badge.svg)](https://github.com/KAFKA2306/BestEthernet/actions/workflows/zero-trust-dns-one-click.yml)
+
 旅先や会場で使える回線を固定的に決めず、**その場で候補を測定し、根拠を残して選び直す**ための Windows 向けツール群です。
 
 ## Vision
