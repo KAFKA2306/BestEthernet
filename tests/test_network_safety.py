@@ -12,6 +12,8 @@ from speed_test_and_select import (
     write_results,
 )
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 def adapter(index, name, *, enabled=True, connected=True, hardware=True, ip=None):
     return AdapterState(
@@ -190,6 +192,18 @@ class NetworkSafetyTests(unittest.TestCase):
             self.assertIn('"requested_interface": "Ethernet A"', text)
             self.assertIn('"source_ip": "192.0.2.1"', text)
             self.assertTrue((path / "measurements.csv").exists())
+
+    def test_unsafe_network_mutation_helpers_do_not_return(self):
+        retired = {
+            "enable_all_interfaces.py",
+            "ethernet_switcher_gui.py",
+            "hotspot_activator.py",
+            "hotspot_interface_selector.py",
+        }
+        self.assertTrue(all(not (ROOT / path).exists() for path in retired))
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        for path in retired:
+            self.assertNotIn(path, readme)
 
 
 if __name__ == "__main__":
