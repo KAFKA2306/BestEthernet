@@ -41,6 +41,14 @@ def load_job(path: Path) -> dict[str, Any]:
         raise ReadinessError("candidate_interfaces must be a non-empty list")
     if len(set(job["candidate_interfaces"])) != len(job["candidate_interfaces"]):
         raise ReadinessError("candidate_interfaces must be unique")
+    if not isinstance(job["hotspot_required"], bool):
+        raise ReadinessError("hotspot_required must be boolean")
+    hotspot_interface = job.get("hotspot_interface")
+    if job["hotspot_required"] and (not isinstance(hotspot_interface, str) or not hotspot_interface.strip()):
+        raise ReadinessError("hotspot_interface must be a non-empty string when hotspot_required is true")
+    if hotspot_interface is not None:
+        if not isinstance(hotspot_interface, str) or hotspot_interface not in job["candidate_interfaces"]:
+            raise ReadinessError("hotspot_interface must name one candidate_interfaces entry")
     required_samples = job["required_samples"]
     if not isinstance(required_samples, int) or required_samples < 3:
         raise ReadinessError("required_samples must be an integer >= 3")
@@ -180,6 +188,37 @@ def summarize_interface(
     return summary
 
 
+def _evaluate_hotspot_requirement(job: dict[str, Any], summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    if not job["hotspot_required"]:
+        return {
+            "required": False,
+            "interface": None,
+            "satisfied": True,
+            "reason_code": "HOTSPOT_NOT_REQUIRED",
+        }
+
+    hotspot_interface = job["hotspot_interface"]
+    hotspot_summary = next(summary for summary in summaries if summary["interface"] == hotspot_interface)
+    if hotspot_summary["status"] == "MEETS_CONFIGURED_THRESHOLDS":
+        return {
+            "required": True,
+            "interface": hotspot_interface,
+            "satisfied": True,
+            "reason_code": "HOTSPOT_REQUIREMENT_MET",
+        }
+    reason_code = (
+        "HOTSPOT_REQUIRED_SAMPLE_COUNT_NOT_MET"
+        if hotspot_summary["status"] == "INSUFFICIENT_EVIDENCE"
+        else "HOTSPOT_CONFIGURED_THRESHOLDS_NOT_MET"
+    )
+    return {
+        "required": True,
+        "interface": hotspot_interface,
+        "satisfied": False,
+        "reason_code": reason_code,
+    }
+
+
 def build_report(job: dict[str, Any], samples: list[dict[str, Any]], *, public: bool) -> dict[str, Any]:
     summaries = [
         summarize_interface(
@@ -192,6 +231,7 @@ def build_report(job: dict[str, Any], samples: list[dict[str, Any]], *, public: 
         )
         for interface in job["candidate_interfaces"]
     ]
+    hotspot_requirement = _evaluate_hotspot_requirement(job, summaries)
     eligible = [s for s in summaries if s["status"] == "MEETS_CONFIGURED_THRESHOLDS"]
     eligible.sort(
         key=lambda s: (
@@ -201,22 +241,28 @@ def build_report(job: dict[str, Any], samples: list[dict[str, Any]], *, public: 
             s["interface"],
         )
     )
-    primary = eligible[0] if eligible else None
-    fallback = eligible[1] if len(eligible) > 1 else None
-    report_status = "READY_FOR_HUMAN_REVIEW" if primary else "INSUFFICIENT_EVIDENCE"
+    ranked_primary = eligible[0] if eligible else None
+    ranked_fallback = eligible[1] if len(eligible) > 1 else None
+    ready = ranked_primary is not None and hotspot_requirement["satisfied"]
+    primary = ranked_primary if ready else None
+    fallback = ranked_fallback if ready else None
+    report_status = "READY_FOR_HUMAN_REVIEW" if ready else "INSUFFICIENT_EVIDENCE"
+    if not ranked_primary:
+        selection_reason_codes = ["NO_CANDIDATE_WITH_SUFFICIENT_EVIDENCE_AND_THRESHOLDS"]
+    elif not hotspot_requirement["satisfied"]:
+        selection_reason_codes = [hotspot_requirement["reason_code"]]
+    else:
+        selection_reason_codes = ["PRIMARY_SELECTED_FROM_THRESHOLD_ELIGIBLE_CANDIDATES"]
     selection = {
         "status": report_status,
         "primary_interface": primary["interface"] if primary else None,
         "fallback_interface": fallback["interface"] if fallback else None,
         "selection_method": (
             "Only candidates with >= required samples and all configured thresholds met are eligible; "
-            "eligible candidates rank by latency median ascending, then download/upload minimum descending."
+            "eligible candidates rank by latency median ascending, then download/upload minimum descending; "
+            "when hotspot_required is true, hotspot_interface must independently meet the same evidence and threshold gates."
         ),
-        "reason_codes": (
-            ["PRIMARY_SELECTED_FROM_THRESHOLD_ELIGIBLE_CANDIDATES"]
-            if primary
-            else ["NO_CANDIDATE_WITH_SUFFICIENT_EVIDENCE_AND_THRESHOLDS"]
-        ),
+        "reason_codes": selection_reason_codes,
     }
     return {
         "schema_version": SCHEMA_VERSION,
@@ -224,6 +270,7 @@ def build_report(job: dict[str, Any], samples: list[dict[str, Any]], *, public: 
         "venue_id": job["venue_id"],
         "test_window": job["test_window"],
         "hotspot_required": bool(job["hotspot_required"]),
+        "requirements": {"hotspot": hotspot_requirement},
         "public_report": public,
         "thresholds": job["thresholds"],
         "candidate_summaries": summaries,
@@ -251,6 +298,8 @@ def render_html(report: dict[str, Any]) -> str:
         )
     primary = report["selection"]["primary_interface"] or "なし"
     fallback = report["selection"]["fallback_interface"] or "なし"
+    hotspot = report["requirements"]["hotspot"]
+    hotspot_result = f"{hotspot['reason_code']} ({'pass' if hotspot['satisfied'] else 'fail'})"
     return f"""<!doctype html>
 <html lang="ja">
 <meta charset="utf-8">
@@ -261,6 +310,7 @@ def render_html(report: dict[str, Any]) -> str:
 <dt>Job ID</dt><dd>{html.escape(report['job_id'])}</dd>
 <dt>Venue ID</dt><dd>{html.escape(report['venue_id'])}</dd>
 <dt>判定</dt><dd>{html.escape(report['selection']['status'])}</dd>
+<dt>Hotspot requirement</dt><dd>{html.escape(hotspot_result)}</dd>
 <dt>Primary</dt><dd>{html.escape(primary)}</dd>
 <dt>Fallback</dt><dd>{html.escape(fallback)}</dd>
 </dl>
