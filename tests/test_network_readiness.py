@@ -20,6 +20,7 @@ def job():
             "min_upload_mbps": 10.0,
         },
         "hotspot_required": True,
+        "hotspot_interface": "Ethernet B",
         "report_output": "reports/demo",
     }
 
@@ -63,6 +64,58 @@ class ReadinessReportTests(unittest.TestCase):
         self.assertEqual(report["selection"]["primary_interface"], "Ethernet A")
         self.assertEqual(report["selection"]["fallback_interface"], "Ethernet B")
         self.assertEqual(report["selection"]["status"], "READY_FOR_HUMAN_REVIEW")
+        self.assertTrue(report["requirements"]["hotspot"]["satisfied"])
+
+    def test_required_hotspot_without_evidence_fails_closed(self):
+        samples = [sample("Ethernet A") for _ in range(3)]
+        report = build_report(job(), samples, public=False)
+        self.assertEqual(report["candidate_summaries"][0]["status"], "MEETS_CONFIGURED_THRESHOLDS")
+        self.assertEqual(report["selection"]["status"], "INSUFFICIENT_EVIDENCE")
+        self.assertIsNone(report["selection"]["primary_interface"])
+        self.assertEqual(
+            report["requirements"]["hotspot"]["reason_code"],
+            "HOTSPOT_REQUIRED_SAMPLE_COUNT_NOT_MET",
+        )
+
+    def test_required_hotspot_rejects_invalid_evidence(self):
+        samples = [sample("Ethernet A") for _ in range(3)] + [
+            sample("Ethernet B", job_id="other-job"),
+            sample("Ethernet B", success=False),
+            sample("Ethernet B", actual="Ethernet A"),
+        ]
+        report = build_report(job(), samples, public=False)
+        hotspot = report["candidate_summaries"][1]
+        self.assertEqual(hotspot["successful_sample_count"], 0)
+        self.assertEqual(hotspot["rejection_counts"]["MEASUREMENT_FAILED"], 1)
+        self.assertEqual(hotspot["rejection_counts"]["EGRESS_MISMATCH"], 1)
+        self.assertFalse(report["requirements"]["hotspot"]["satisfied"])
+        self.assertEqual(report["selection"]["status"], "INSUFFICIENT_EVIDENCE")
+
+    def test_required_hotspot_with_sufficient_evidence_allows_ready(self):
+        samples = [sample("Ethernet A") for _ in range(3)] + [sample("Ethernet B", latency=20) for _ in range(3)]
+        report = build_report(job(), samples, public=False)
+        self.assertTrue(report["requirements"]["hotspot"]["satisfied"])
+        self.assertEqual(report["requirements"]["hotspot"]["reason_code"], "HOTSPOT_REQUIREMENT_MET")
+        self.assertEqual(report["selection"]["status"], "READY_FOR_HUMAN_REVIEW")
+
+    def test_hotspot_not_required_preserves_selection(self):
+        payload = job()
+        payload["hotspot_required"] = False
+        payload.pop("hotspot_interface")
+        samples = [sample("Ethernet A") for _ in range(3)]
+        report = build_report(payload, samples, public=False)
+        self.assertEqual(report["selection"]["status"], "READY_FOR_HUMAN_REVIEW")
+        self.assertEqual(report["selection"]["primary_interface"], "Ethernet A")
+        self.assertEqual(report["requirements"]["hotspot"]["reason_code"], "HOTSPOT_NOT_REQUIRED")
+
+    def test_hotspot_requirement_is_deterministic_and_serialized(self):
+        samples = [sample("Ethernet A") for _ in range(3)]
+        first = build_report(job(), samples, public=False)
+        second = build_report(job(), samples, public=False)
+        self.assertEqual(first, second)
+        serialized = json.dumps(first, sort_keys=True)
+        self.assertIn("HOTSPOT_REQUIRED_SAMPLE_COUNT_NOT_MET", serialized)
+        self.assertIn('"requirements"', serialized)
 
     def test_egress_mismatch_is_rejected_and_cannot_satisfy_sample_gate(self):
         samples = [sample("Ethernet A"), sample("Ethernet A"), sample("Ethernet A", actual="Ethernet B")]
@@ -114,10 +167,19 @@ class ReadinessReportTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "required_samples"):
                 load_job(path)
 
+    def test_job_requires_hotspot_interface_when_hotspot_is_required(self):
+        payload = job()
+        payload.pop("hotspot_interface")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "job.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "hotspot_interface"):
+                load_job(path)
+
     def test_html_escapes_job_and_interface_names(self):
         payload = job()
         payload["job_id"] = "<script>"
-        payload["candidate_interfaces"] = ["Ethernet <A>"]
+        payload["candidate_interfaces"] = ["Ethernet <A>", "Ethernet B"]
         report = build_report(payload, [], public=False)
         rendered = render_html(report)
         self.assertNotIn("<script>", rendered)
