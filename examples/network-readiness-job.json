@@ -14,5 +14,6 @@
     "min_upload_mbps": 10.0
   },
   "hotspot_required": true,
+  "hotspot_interface": "Phone Tethering",
   "report_output": "examples/network-readiness-output"
 }
